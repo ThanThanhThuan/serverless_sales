@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Portal</title>
+    <style>
+        :root { --primary: #2563eb; --bg: #f3f4f6; --text: #1f2937; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        
+        /* Utility */
+        .hidden { display: none !important; }
+        .full-width { width: 100%; box-sizing: border-box; }
+        .btn { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; transition: 0.2s; }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { background: #ccc; cursor: wait; }
+        input, select, textarea { padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 15px; width: 100%; box-sizing: border-box; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px; }
+
+        /* Login Screen */
+        #login-screen { max-width: 400px; margin: 50px auto; text-align: center; }
+
+        /* App Header & Nav */
+        .app-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 15px; }
+        .user-info { font-size: 14px; color: #666; }
+        .tabs { display: flex; gap: 10px; }
+        .tab { padding: 8px 15px; cursor: pointer; border-radius: 5px; background: #eee; }
+        .tab.active { background: var(--primary); color: white; }
+
+        /* Admin Table */
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+        th, td { text-align: left; padding: 10px; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; }
+    </style>
+</head>
+<body>
+
+<!-- SECTION 1: LOGIN SCREEN -->
+<div id="login-screen" class="container">
+    <h3>Than Thanh Thuan's serverless Sales App with Google Sheet</h3>
+    <h2>Staff Login</h2>
+    <p>Staff Login: Mai,mai or Ben,123</p>
+    <p>Admin Login: ThanThanhThuan</p>
+
+
+    <form id="loginForm">
+        <label style="text-align:left">Username</label>
+        <input type="text" name="username" required placeholder="Enter username (e.g. Alice)">
+        
+        <label style="text-align:left">Password</label>
+        <input type="password" name="password" required placeholder="Enter password">
+        
+        <button type="submit" class="btn" id="loginBtn">Login</button>
+        <p id="loginError" style="color:red; display:none; margin-top:10px;"></p>
+    </form>
+</div>
+
+<!-- SECTION 2: MAIN APP (Hidden until login) -->
+<div id="main-app" class="container hidden">
+    
+    <div class="app-header">
+        <div class="user-info">Logged in as: <strong id="displayUsername">User</strong></div>
+        <button onclick="logout()" style="background:none; border:none; color:red; cursor:pointer;">Logout</button>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('sales')">Sales Input</div>
+        <div class="tab" onclick="switchTab('admin')">Admin View</div>
+    </div>
+
+    <br>
+
+    <!-- SALES FORM -->
+    <div id="sales" class="content-section">
+        <h3>Submit New Sale</h3>
+        <form id="salesForm">
+            <!-- Hidden field for action type -->
+            <input type="hidden" name="action" value="submit">
+            
+            <label>Salesperson</label>
+            <!-- Readonly so they can't change the name manually -->
+            <input type="text" name="salesperson" id="inputSalesperson" readonly style="background:#f0f0f0; color:#555;">
+
+            <label>Date & Time</label>
+            <input type="datetime-local" name="datetime" required>
+
+            <label>Product Name</label>
+            <input type="text" name="product" required placeholder="Product Name">
+
+            <label>Quantity</label>
+            <input type="number" name="quantity" required min="1">
+
+            <label>Location</label>
+            <input type="text" name="location" required placeholder="Store Location">
+
+            <label>Notes</label>
+            <textarea name="notes" rows="3"></textarea>
+
+            <button type="submit" class="btn" id="submitBtn">Submit Sale</button>
+        </form>
+    </div>
+
+    <!-- ADMIN VIEW -->
+    <div id="admin" class="content-section hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>Sales Records</h3>
+            <button onclick="loadAdminData()" style="padding:5px 10px;">Refresh Data</button>
+        </div>
+        
+        <input type="text" id="searchInput" placeholder="Filter..." onkeyup="filterData()" style="margin-top:10px;">
+        
+        <div style="overflow-x:auto;">
+            <table id="salesTable">
+                <thead>
+                    <tr><th>Date</th><th>Salesperson</th><th>Product</th><th>Qty</th><th>Location</th><th>Notes</th></tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+        <div id="loadingMsg" style="text-align:center; padding:10px; display:none;">Loading...</div>
+    </div>
+</div>
+
+<script>
+    // ********************************************
+    // PASTE YOUR NEW GOOGLE SCRIPT URL HERE
+    // ********************************************
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzoGwILYliTUHXUE2ViBHJtxrq_UAdddmCue3pTX07ZFdjIjyE6uzGy_1hPOzq8jPzcow/exec';
+
+    let currentUser = null;
+    let salesData = [];
+
+    // --- LOGIN LOGIC ---
+    const loginForm = document.getElementById('loginForm');
+    loginForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const btn = document.getElementById('loginBtn');
+        const err = document.getElementById('loginError');
+        
+        btn.disabled = true;
+        btn.textContent = "Verifying...";
+        err.style.display = 'none';
+
+        const formData = new FormData(loginForm);
+        // Add action=login to the request
+        formData.append('action', 'login');
+
+        // Send to Google Script
+        fetch(SCRIPT_URL, {
+            method: 'POST',
+            body: formData // Using FormData directly (works better for POST)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.result === 'success') {
+                // SUCCESS: Switch to App
+                currentUser = data.username;
+                initializeSession();
+            } else {
+                // FAIL
+                err.textContent = data.error || "Login Failed";
+                err.style.display = 'block';
+            }
+        })
+        .catch(e => {
+            err.textContent = "Connection Error";
+            err.style.display = 'block';
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = "Login";
+        });
+    });
+
+    function initializeSession() {
+        // Hide login, show app
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('main-app').classList.remove('hidden');
+        
+        // Fill user info
+        document.getElementById('displayUsername').textContent = currentUser;
+        document.getElementById('inputSalesperson').value = currentUser;
+    }
+
+    function logout() {
+        location.reload(); // Simple reload to clear state
+    }
+
+    // --- SALES SUBMISSION LOGIC ---
+    const salesForm = document.getElementById('salesForm');
+    salesForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const btn = document.getElementById('submitBtn');
+        btn.disabled = true;
+        btn.textContent = "Saving...";
+
+        const formData = new FormData(salesForm);
+        // Ensure action=submit is there (it's in the HTML hidden input, but good to check)
+        
+        fetch(SCRIPT_URL, { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+            if(data.result === 'success') {
+                alert("Sale Saved!");
+                salesForm.reset();
+                // Re-fill the name because reset() clears it
+                document.getElementById('inputSalesperson').value = currentUser; 
+            } else {
+                alert("Error: " + data.error);
+            }
+        })
+        .catch(err => alert("Connection Error"))
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = "Submit Sale";
+        });
+    });
+
+    // --- TABS & ADMIN LOGIC ---
+    function switchTab(tabName) {
+        // Update Tabs UI
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        // We assume the clicked element triggered this, or we find it
+        if(event) event.target.classList.add('active');
+
+        // Update Content
+        document.getElementById('sales').classList.add('hidden');
+        document.getElementById('admin').classList.add('hidden');
+        document.getElementById(tabName).classList.remove('hidden');
+
+        // If Admin, load data
+        if(tabName === 'admin') loadAdminData();
+    }
+
+    function loadAdminData() {
+        // Ask for Admin Password (Old Method)
+        const password = prompt("Enter Admin Password:");
+        if(!password) { switchTab('sales'); return; }
+
+        const tbody = document.getElementById('tableBody');
+        const loading = document.getElementById('loadingMsg');
+        
+        tbody.innerHTML = '';
+        loading.style.display = 'block';
+
+        // Send password in URL
+        fetch(SCRIPT_URL + "?password=" + encodeURIComponent(password))
+        .then(res => res.json())
+        .then(data => {
+            if(data.error) {
+                alert(data.error);
+                switchTab('sales');
+            } else {
+                salesData = data;
+                renderTable(data);
+            }
+        })
+        .catch(e => alert("Error loading admin data"))
+        .finally(() => loading.style.display = 'none');
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        if(data.length === 0) { tbody.innerHTML = '<tr><td colspan="6">No records</td></tr>'; return; }
+
+        data.forEach(row => {
+            let dateStr = row.datetime;
+            try { dateStr = new Date(row.datetime).toLocaleDateString() + ' ' + new Date(row.datetime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); } catch(e){}
+            
+            tbody.innerHTML += `
+                <tr>
+                    <td>${dateStr}</td>
+                    <td><strong>${row.salesperson}</strong></td>
+                    <td>${row.product}</td>
+                    <td>${row.quantity}</td>
+                    <td>${row.location}</td>
+                    <td>${row.notes}</td>
+                </tr>`;
+        });
+    }
+
+    function filterData() {
+        const query = document.getElementById('searchInput').value.toLowerCase();
+        const filtered = salesData.filter(item => 
+            String(item.salesperson).toLowerCase().includes(query) ||
+            String(item.product).toLowerCase().includes(query) ||
+            String(item.location).toLowerCase().includes(query)
+        );
+        renderTable(filtered);
+    }
+</script>
+
+</body>
+</html>
